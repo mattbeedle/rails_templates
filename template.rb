@@ -159,6 +159,8 @@ entitystore = 'URI.encode("file:#{Rails.root}/tmp/dragonfly/cache/body")'
 
 inject_into_file 'config/application.rb', after: "config.assets.version = '1.0'" do
   <<-eos
+
+
     config.middleware.insert_before Rack::Lock, Rack::Cache, {
       :verbose     => true,
       :metastore   => #{metastore},
