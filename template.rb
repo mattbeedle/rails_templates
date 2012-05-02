@@ -1,6 +1,6 @@
 run "echo '' > Gemfile"
 
-
+gem 'dalli'
 gem 'decent_exposure'
 gem 'devise'
 
@@ -62,26 +62,27 @@ run 'bundle install'
 run 'touch config/database.yml'
 username = ENV['USER']
 inject_into_file 'config/database.yml', after: '' do
+
 <<-eos
 base: &base
   adapter: postgresql
   host: 127.0.0.1
   # encoding: utf8
   pool: 5
-  username: mattbeedle
+  username: #{username}
   password:
 
 development:
   <<: *base
-  database: #{username}_development
+  database: #{@app_name}_development
 
 test: &test
   <<: *base
-  database: #{username}_test
+  database: #{@app_name}_test
 
 production:
   <<: *base
-  database: #{username}_production
+  database: #{@app_name}_production
   host: <%= ENV['DB_HOST'] %>
   username: <%= ENV['DB_USER'] %>
   password: <%= ENV['DB_PASSWORD'] %>
@@ -90,12 +91,13 @@ end
 
 inject_into_file 'config/application.rb', after: 'config.filter_parameters += [:password]' do
   <<-eos
-    # Customize generators
+
     config.generators do |g|
       g.fixture_replacement :fabrication, :dir => 'spec/fabricators'
       g.orm                 :data_mapper
       g.test_framework      :rspec
-      g.templating_engine   :slim
+      g.template_engine     :slim
+      g.stylesheet_engine   :less
     end
   eos
 end
@@ -121,7 +123,7 @@ gsub_file 'spec/spec_helper.rb', 'config.fixture_path = "#{::Rails.root}/spec/fi
 
 run "echo '--format documentation' >> .rspec"
 
-remove_file 'public/index'
+remove_file 'public/index.html'
 remove_file 'public/images/rails.png'
 
 run "echo 'config/database.yml' >> .gitignore"
@@ -133,6 +135,107 @@ run 'bundle exec guard init rspec'
 gsub_file 'Guardfile', "guard 'rspec', :version => 2 do", "guard 'rspec', :version => 2, :cli => '--drb' do"
 
 inject_into_file 'Guardfile', "notification :libnotify\n\n", :before => /^guard 'spork'.*/
+
+route "root to: 'pages#index'"
+inside('app/views/pages') do
+  run 'touch index.html.slim'
+end
+
+run 'touch config/initializers/dragonfly.rb'
+inject_into_file 'config/initializers/dragonfly.rb', after: '' do
+  <<-eos
+    require 'dm-dragonfly'
+
+    app = Dragonfly[:images]
+    app.configure_with(:imagemagick)
+    app.configure_with(:rails)
+
+    app.define_dm_macro(DataMapper::Resource, :image_accessor)
+  eos
+end
+
+metastore = 'URI.encode("file:#{Rails.root}/tmp/dragonfly/cache/meta")'
+entitystore = 'URI.encode("file:#{Rails.root}/tmp/dragonfly/cache/body")'
+
+inject_into_file 'config/application.rb', after: "config.assets.version = '1.0'" do
+  <<-eos
+    config.middleware.insert_before Rack::Lock, Rack::Cache, {
+      :verbose     => true,
+      :metastore   => #{metastore},
+      :entitystore => #{entitystore}
+    }
+
+    config.middleware.insert_after 'Rack::Cache', 'Dragonfly::Middleware', :images
+  eos
+end
+
+
+run 'touch config/initializers/resque.rb'
+inject_into_file 'config/initializers/resque.rb', after: '' do
+  <<-eos
+    require 'resque'
+
+    uri = URI.parse(ENV['REDISTOGO_URL'] || 'localhost')
+    REDIS = Redis.new(host: uri.host, port: uri.port, password: uri.password)
+
+    if Rails.env.test?
+      Resque.inline = true
+    else
+      Resque.redis = REDIS
+    end
+
+    require 'resque_scheduler'
+
+    # schedule = YAML.load_file(Rails.root.join('config', 'schedule.yml'))
+
+    # Resque.schedule = schedule
+
+    Resque.redis.namespace = 'resque:#{@app_name}'
+  eos
+end
+
+run 'touch config/initializers/resque_auth.rb'
+inject_into_file 'config/initializers/resque_auth.rb', after: '' do
+  <<-eos
+    Resque::Server.use(Rack::Auth::Basic) do |user, password|
+      user == 'matt' && password == 'EmBW0qxEDLmhixRbhMIYVl8LIKyWiHHDuivQkVzcXFBQHAeiKj'
+    end
+  eos
+end
+
+run "mkdir -p lib/#{@app_name.classify}"
+run "touch lib/#{@app_name.classify}/async.rb"
+method = '#{method}'
+inject_into_file "lib/#{@app_name.classify}/async.rb", after: '' do
+  <<-eos
+    module Pornbook
+      module Async
+        extend ActiveSupport::Concern
+
+        module ClassMethods
+          def perform(id, method, *args)
+            get(id).send("#{method}_without_async", *args)
+          end
+
+          def handle_asyncronously(*args)
+            args.each do |method|
+              define_method "#{method}_with_async" do |*args|
+                async(method, *args)
+              end
+              alias_method_chain method.to_sym, :async
+            end
+          end
+        end
+
+        def async(method, *args)
+          Resque.enqueue(self.class, id, method, *args)
+        end
+      end
+    end
+  eos
+end
+
+rake 'db:automigrate'
 
 git :init
 git add: '.'
