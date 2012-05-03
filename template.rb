@@ -57,6 +57,8 @@ gem 'launchy', group: [ :test ]
 gem 'rb-fsevent', group: [ :test ]
 gem 'timecop', group: [ :test ]
 
+gem 'guard-livereload', group: [ :development ]
+
 run 'bundle install'
 
 run 'touch config/database.yml'
@@ -125,6 +127,7 @@ run "echo '--format documentation' >> .rspec"
 
 remove_file 'public/index.html'
 remove_file 'public/images/rails.png'
+remove_file 'app/views/layouts/application.html.erb'
 
 run "echo 'config/database.yml' >> .gitignore"
 
@@ -135,6 +138,19 @@ run 'bundle exec guard init rspec'
 gsub_file 'Guardfile', "guard 'rspec', :version => 2 do", "guard 'rspec', :version => 2, :cli => '--drb' do"
 
 inject_into_file 'Guardfile', "notification :libnotify\n\n", :before => /^guard 'spork'.*/
+
+inject_into_file 'Guardfile', before: /^guard 'spork'.*/ do
+  <<-eos
+  guard 'livereload' do
+    watch(%r{app/views/.+\.(erb|haml|slim)})
+    watch(%r{app/helpers/.+\.rb})
+    watch(%r{public/.+\.(css|js|html)})
+    watch(%r{config/locales/.+\.yml})
+    # Rails Assets Pipeline
+    watch(%r{(app|vendor)/assets/\w+/(.+\.(css|js|html)).*})  { |m| "/assets/#{m[2]}" }
+  end\n\n
+  eos
+end
 
 route "root to: 'pages#index'"
 inside('app/views/pages') do
@@ -234,6 +250,19 @@ inject_into_file "lib/#{@app_name.classify}/async.rb", after: '' do
         end
       end
     end
+  eos
+end
+
+insert_into_file 'app/controllers/application_controller.rb', after: 'protect_from_forgery' do
+  <<-eos
+
+
+  param_accessible [
+    :return_to, :page, :per_page, :utf8, :commit, :action, :controller,
+    :authenticity_token, :format
+  ]
+
+  param_accessible :id, only: [ :show, :edit, :update, :confirm_delete, :destroy ]
   eos
 end
 
