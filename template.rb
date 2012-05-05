@@ -98,6 +98,7 @@ inject_into_file 'config/application.rb', after: 'config.filter_parameters += [:
       g.fixture_replacement :fabrication, :dir => 'spec/fabricators'
       g.orm                 :data_mapper
       g.test_framework      :rspec
+      g.integration_tool    :rspec
       g.template_engine     :slim
       g.stylesheet_engine   :less
     end
