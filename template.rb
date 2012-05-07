@@ -93,7 +93,7 @@ end
 
 inject_into_file 'config/application.rb', after: 'config.filter_parameters += [:password]' do
   <<-eos
-
+    \n
     config.generators do |g|
       g.fixture_replacement :fabrication, :dir => 'spec/fabricators'
       g.orm                 :data_mapper
@@ -138,7 +138,7 @@ run 'bundle exec guard init rspec'
 
 gsub_file 'Guardfile', "guard 'rspec', :version => 2 do", "guard 'rspec', :version => 2, :cli => '--drb' do"
 
-inject_into_file 'Guardfile', "notification :libnotify\n\n", :before => /^guard 'spork'.*/
+inject_into_file 'Guardfile', "notification :libnotify\n\n", before: /^guard 'spork'.*/
 
 inject_into_file 'Guardfile', before: /^guard 'spork'.*/ do
   <<-eos
@@ -148,7 +148,7 @@ inject_into_file 'Guardfile', before: /^guard 'spork'.*/ do
     watch(%r{public/.+\.(css|js|html)})
     watch(%r{config/locales/.+\.yml})
     # Rails Assets Pipeline
-    watch(%r{(app|vendor)/assets/\w+/(.+\.(css|js|html)).*})  { |m| "/assets/#{m[2]}" }
+    watch(%r{(app|vendor)/assets/\w+/(.+\.(css|js|html)).*})  { |m| "/assets/\#{m[2]}" }
   end\n\n
   eos
 end
@@ -171,17 +171,13 @@ inject_into_file 'config/initializers/dragonfly.rb', after: '' do
   eos
 end
 
-metastore = 'URI.encode("file:#{Rails.root}/tmp/dragonfly/cache/meta")'
-entitystore = 'URI.encode("file:#{Rails.root}/tmp/dragonfly/cache/body")'
-
 inject_into_file 'config/application.rb', after: "config.assets.version = '1.0'" do
   <<-eos
-
-
+    \n\n
     config.middleware.insert_before Rack::Lock, Rack::Cache, {
       :verbose     => true,
-      :metastore   => #{metastore},
-      :entitystore => #{entitystore}
+      :metastore   => URI.encode("file:\#{Rails.root}/tmp/dragonfly/cache/meta"),
+      :entitystore => URI.encode("file:\#{Rails.root}/tmp/dragonfly/cache/body")
     }
 
     config.middleware.insert_after 'Rack::Cache', 'Dragonfly::Middleware', :images
@@ -256,14 +252,13 @@ end
 
 insert_into_file 'app/controllers/application_controller.rb', after: 'protect_from_forgery' do
   <<-eos
+    \n\n
+    param_accessible [
+      :return_to, :page, :per_page, :utf8, :commit, :action, :controller,
+      :authenticity_token, :format
+    ]
 
-
-  param_accessible [
-    :return_to, :page, :per_page, :utf8, :commit, :action, :controller,
-    :authenticity_token, :format
-  ]
-
-  param_accessible :id, only: [ :show, :edit, :update, :confirm_delete, :destroy ]
+    param_accessible :id, only: [ :show, :edit, :update, :confirm_delete, :destroy ]
   eos
 end
 
